@@ -502,7 +502,19 @@ elif menu in ["Create Quotation", "Create Invoice"]:
 
       st.success(f"Professional {doc_type} generated and saved successfully!")
 
-      # Clean printable card container
+      # Build HTML table rows dynamically so they render perfectly in print
+      table_rows_html = ""
+      for item in doc_data["items"]:
+        table_rows_html += f"""
+                <tr>
+                    <td style="padding: 10px; border-bottom: 1px solid #ddd;">{item['description']}</td>
+                    <td style="padding: 10px; border-bottom: 1px solid #ddd; text-align: center;">{item['quantity']}</td>
+                    <td style="padding: 10px; border-bottom: 1px solid #ddd; text-align: right;">Rs. {item['unit_price']:,.2f}</td>
+                    <td style="padding: 10px; border-bottom: 1px solid #ddd; text-align: right;">Rs. {item['total']:,.2f}</td>
+                </tr>
+                """
+
+      # Clean printable card container with embedded native HTML table
       st.markdown(
           f"""
             <div style="background-color: white; color: black; padding: 30px; border: 1px solid #ddd; border-radius: 8px;" id="clean-bill">
@@ -513,19 +525,19 @@ elif menu in ["Create Quotation", "Create Invoice"]:
                 <p><b>Date:</b> {doc_data['date']}</p>
                 <p><b>Client Name:</b> {doc_data['client_name']} &nbsp;&nbsp;|&nbsp;&nbsp; <b>Mobile:</b> {doc_data['mobile_number']}</p>
                 <br>
-            """,
-          unsafe_allow_html=True,
-      )
-
-      st.dataframe(
-          pd.DataFrame(doc_data["items"])[
-              ["description", "unit_price", "quantity", "total"]
-          ],
-          use_container_width=True,
-      )
-
-      st.markdown(
-          f"""
+                <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+                    <thead>
+                        <tr style="background-color: #f1f1f1; text-align: left;">
+                            <th style="padding: 10px; border-bottom: 2px solid #ccc;">Item Description</th>
+                            <th style="padding: 10px; border-bottom: 2px solid #ccc; text-align: center;">Qty</th>
+                            <th style="padding: 10px; border-bottom: 2px solid #ccc; text-align: right;">Unit Price</th>
+                            <th style="padding: 10px; border-bottom: 2px solid #ccc; text-align: right;">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {table_rows_html}
+                    </tbody>
+                </table>
                 <div style="text-align: right; margin-top: 20px;">
                     <p><b>Subtotal:</b> Rs. {doc_data['subtotal']:,.2f}</p>
                     {f"<p><b>Discount:</b> -Rs. {doc_data['discount_amount']:,.2f}</p>" if doc_data['discount_amount'] > 0 else ""}
