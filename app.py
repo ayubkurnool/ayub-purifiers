@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from datetime import datetime
 import pandas as pd
@@ -28,12 +29,12 @@ def init_db():
   cursor.execute("""
         CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            type TEXT, -- 'Quotation' or 'Invoice'
+            type TEXT,
             client_name TEXT,
             mobile_number TEXT,
             items_json TEXT,
             subtotal REAL,
-            discount_type TEXT, -- 'percentage' or 'fixed'
+            discount_type TEXT,
             discount_value REAL,
             total_amount REAL,
             created_by TEXT,
@@ -59,14 +60,18 @@ init_db()
 
 # --- HELPER FUNCTIONS ---
 def log_activity(username, action):
-  conn = sqlite3.connect(DB_NAME)
-  cursor = conn.cursor()
-  cursor.execute(
-      "INSERT INTO activity_log (username, action, timestamp) VALUES (?, ?, ?)",
-      (username, action, datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
-  )
-  conn.commit()
-  conn.close()
+  try:
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO activity_log (username, action, timestamp) VALUES (?, ?,"
+        " ?)",
+        (username, action, datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+    )
+    conn.commit()
+    conn.close()
+  except Exception:
+    pass
 
 
 # --- AUTHENTICATION CONFIGURATION ---
@@ -82,6 +87,27 @@ st.set_page_config(
     page_title="Ayub Purifiers Management System", layout="wide"
 )
 
+# --- CLEAN PRINT CSS INJECTION (Hides sidebar & menus during print) ---
+st.markdown(
+    """
+    <style>
+    @media print {
+        /* Hide sidebar, navigation, headers, and buttons when printing */
+        [data-testid="stSidebar"], header, footer, .stButton, .stSelectbox, .stTextInput {
+            display: none !important;
+        }
+        /* Make main content full width */
+        [data-testid="stMain"] {
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+    }
+    </style>
+""",
+    unsafe_allow_html=True,
+)
+
 if "logged_in" not in st.session_state:
   st.session_state.logged_in = False
   st.session_state.username = ""
@@ -89,7 +115,7 @@ if "logged_in" not in st.session_state:
 
 # --- LOGIN SCREEN ---
 if not st.session_state.logged_in:
-  st.title("💧 Value Delivers - Login Portal")
+  st.title("💧 Ayub Purifiers - Login Portal")
   st.markdown("Water Purifier Sales & Service Management System")
 
   with st.form("login_form"):
@@ -133,7 +159,7 @@ if st.sidebar.button("Logout"):
   st.session_state.logged_in = False
   st.rerun()
 
-# --- 1. DASHBOARD MODULE (Updated: Excludes Quotations) ---
+# --- 1. DASHBOARD MODULE (Excludes Quotations) ---
 if menu == "Dashboard":
   st.title("📊 Business Dashboard")
   st.markdown("At-a-glance business insights (Invoices & Inventory focus).")
@@ -146,7 +172,6 @@ if menu == "Dashboard":
   )
   conn.close()
 
-  # Filter transactions to look only at Invoices (ignoring quotations on dashboard)
   invoices_df = (
       trans_df[trans_df["type"] == "Invoice"]
       if not trans_df.empty
@@ -284,7 +309,7 @@ elif menu == "Price Management":
     else:
       st.info("No items available in inventory to update pricing.")
 
-# --- 4 & 5. CREATE QUOTATION & INVOICE MODULES (With Print Button) ---
+# --- 4 & 5. CREATE QUOTATION & INVOICE MODULES ---
 elif menu in ["Create Quotation", "Create Invoice"]:
   doc_type = "Quotation" if menu == "Create Quotation" else "Invoice"
   st.title(f"📝 Create {doc_type}")
@@ -362,7 +387,7 @@ elif menu in ["Create Quotation", "Create Invoice"]:
       discount_amount = 0.0
       st.info(
           "Note: Only the Administrator (Owner) can apply discounts to"
-          " quotations/invoices."
+          " documents."
       )
 
     final_total = max(0.0, subtotal - discount_amount)
@@ -370,8 +395,6 @@ elif menu in ["Create Quotation", "Create Invoice"]:
 
     if st.button(f"Generate & Save {doc_type}"):
       if client_name and mobile_number and selected_items:
-        import json
-
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
         cursor.execute(
@@ -398,7 +421,7 @@ elif menu in ["Create Quotation", "Create Invoice"]:
         )
         st.success(f"Professional {doc_type} generated successfully!")
 
-        # Professional Layout Output with Direct Print Button
+        # Document View Card
         st.markdown("---")
         st.markdown(f"### 🖨️ AYUB PURIFIERS - OFFICIAL {doc_type.upper()}")
         st.write(f"**Date:** {datetime.now().strftime('%Y-%m-%d')}")
@@ -411,11 +434,11 @@ elif menu in ["Create Quotation", "Create Invoice"]:
           st.write(f"**Discount Applied:** -Rs. {discount_amount:,.2f}")
         st.write(f"**Total Amount Payable:** Rs. {final_total:,.2f}")
 
-        # Built-in direct browser print trigger button
+        # Clean Direct Print Button
         st.markdown(
             """
-                <button onclick="window.print();" style="background-color: #2e7d32; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; font-weight: bold; margin-top: 10px;">
-                    🖨️ Print this Document Now
+                <button onclick="window.print();" style="background-color: #2e7d32; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; font-weight: bold; margin-top: 15px;">
+                    🖨️ Print Clean Document Now
                 </button>
                 """,
             unsafe_allow_html=True,
