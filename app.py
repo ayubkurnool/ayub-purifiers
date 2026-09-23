@@ -1,9 +1,10 @@
+from datetime import datetime
 import json
 import sqlite3
-from datetime import datetime
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+import streamlit.components.v1 as components
 
 # --- DATABASE SETUP ---
 DB_NAME = "ayub_database.db"
@@ -84,7 +85,9 @@ CREDENTIALS = {
 }
 
 st.set_page_config(
-    page_title="Ayub Purifiers Management System", layout="wide"
+    page_title="Ayub Purifiers Management System",
+    layout="wide",
+    initial_sidebar_state="expanded",
 )
 
 # --- CLEAN PRINT CSS INJECTION (Hides sidebar & menus during print) ---
@@ -92,15 +95,25 @@ st.markdown(
     """
     <style>
     @media print {
-        /* Hide sidebar, navigation, headers, and buttons when printing */
-        [data-testid="stSidebar"], header, footer, .stButton, .stSelectbox, .stTextInput {
-            display: none !important;
+        /* Hide everything by default on the page */
+        body * {
+            visibility: hidden !important;
         }
-        /* Make main content full width */
-        [data-testid="stMain"] {
+        /* Show only our clean bill container and its children */
+        #clean-bill, #clean-bill * {
+            visibility: visible !important;
+        }
+        #clean-bill {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
             width: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
+            border: none !important;
+            padding: 0px !important;
+        }
+        /* Hide Streamlit UI Chrome */
+        [data-testid="stSidebar"], header, footer, .stButton, div[data-testid="stHorizontalBlock"] {
+            display: none !important;
         }
     }
     </style>
@@ -159,10 +172,17 @@ if st.sidebar.button("Logout"):
   st.session_state.logged_in = False
   st.rerun()
 
-# --- 1. DASHBOARD MODULE (Excludes Quotations) ---
+# --- 1. DASHBOARD MODULE ---
 if menu == "Dashboard":
-  st.title("📊 Business Dashboard")
-  st.markdown("At-a-glance business insights (Invoices & Inventory focus).")
+  st.markdown(
+      """
+        <div style="background: linear-gradient(135deg, #0d47a1 0%, #1976d2 100%); padding: 35px; border-radius: 12px; color: white; margin-bottom: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+            <h1 style="margin: 0; font-size: 2.3rem; color: white; font-weight: 700;">📊 Ayub Purifiers Command Center</h1>
+            <p style="margin: 10px 0 0 0; font-size: 1.1rem; opacity: 0.95;">Welcome back! Here is your real-time overview of inventory, sales, and business operations.</p>
+        </div>
+        """,
+      unsafe_allow_html=True,
+  )
 
   conn = sqlite3.connect(DB_NAME)
   inv_df = pd.read_sql("SELECT * FROM inventory", conn)
@@ -180,43 +200,73 @@ if menu == "Dashboard":
 
   col1, col2, col3, col4 = st.columns(4)
   with col1:
-    st.metric(
-        "Total Inventory Items",
-        len(inv_df) if not inv_df.empty else 0,
+    total_inv_count = len(inv_df) if not inv_df.empty else 0
+    st.markdown(
+        f"""
+            <div style="background-color: #e3f2fd; padding: 20px; border-radius: 10px; border-left: 5px solid #1976d2;">
+                <p style="margin:0; color: #555; font-size: 14px; font-weight: bold;">TOTAL INVENTORY</p>
+                <h2 style="margin: 5px 0 0 0; color: #0d47a1;">{total_inv_count}</h2>
+            </div>
+            """,
+        unsafe_allow_html=True,
     )
   with col2:
     total_sales = (
         invoices_df["total_amount"].sum() if not invoices_df.empty else 0
     )
-    st.metric("Total Invoiced Sales", f"Rs. {total_sales:,.2f}")
-  with col3:
-    total_invoices_count = (
-        len(invoices_df) if not invoices_df.empty else 0
+    st.markdown(
+        f"""
+            <div style="background-color: #e8f5e9; padding: 20px; border-radius: 10px; border-left: 5px solid #2e7d32;">
+                <p style="margin:0; color: #555; font-size: 14px; font-weight: bold;">TOTAL INVOICED SALES</p>
+                <h2 style="margin: 5px 0 0 0; color: #1b5e20;">Rs. {total_sales:,.2f}</h2>
+            </div>
+            """,
+        unsafe_allow_html=True,
     )
-    st.metric("Total Invoices Issued", total_invoices_count)
+  with col3:
+    total_invoices_count = len(invoices_df) if not invoices_df.empty else 0
+    st.markdown(
+        f"""
+            <div style="background-color: #fff3e0; padding: 20px; border-radius: 10px; border-left: 5px solid #f57c00;">
+                <p style="margin:0; color: #555; font-size: 14px; font-weight: bold;">INVOICES ISSUED</p>
+                <h2 style="margin: 5px 0 0 0; color: #e65100;">{total_invoices_count}</h2>
+            </div>
+            """,
+        unsafe_allow_html=True,
+    )
   with col4:
     low_stock = (
         len(inv_df[inv_df["quantity"] < 5]) if not inv_df.empty else 0
     )
-    st.metric("Low Stock Alerts (<5)", low_stock, delta_color="inverse")
+    st.markdown(
+        f"""
+            <div style="background-color: #ffebee; padding: 20px; border-radius: 10px; border-left: 5px solid #c62828;">
+                <p style="margin:0; color: #555; font-size: 14px; font-weight: bold;">LOW STOCK ALERTS</p>
+                <h2 style="margin: 5px 0 0 0; color: #b71c1c;">{low_stock}</h2>
+            </div>
+            """,
+        unsafe_allow_html=True,
+    )
 
-  st.markdown("---")
+  st.markdown("<br>", unsafe_allow_html=True)
   c1, c2 = st.columns(2)
   with c1:
-    st.subheader("Inventory Overview & Stock Levels")
+    st.subheader("📦 Inventory Overview & Stock Levels")
     if not inv_df.empty:
       fig = px.bar(
           inv_df,
           x="part_description",
           y="quantity",
           title="Stock Levels per Item",
+          color="quantity",
+          color_continuous_scale="blues",
       )
       st.plotly_chart(fig, use_container_width=True)
     else:
       st.info("No inventory data found.")
 
   with c2:
-    st.subheader("Recent User Activity")
+    st.subheader("🕒 Recent User Activity")
     if not activity_df.empty:
       st.dataframe(
           activity_df[["username", "action", "timestamp"]],
@@ -245,7 +295,7 @@ elif menu == "Stock Receiving":
           cursor = conn.cursor()
           cursor.execute(
               """INSERT INTO inventory (part_number, part_description, quantity, date_received) 
-                             VALUES (?, ?, ?, ?)""",
+                               VALUES (?, ?, ?, ?)""",
               (part_number, part_description, quantity, current_date),
           )
           conn.commit()
@@ -324,7 +374,6 @@ elif menu in ["Create Quotation", "Create Invoice"]:
         " sales documents."
     )
   else:
-    # Use session state to toggle between form view and success print view
     if f"show_print_{doc_type}" not in st.session_state:
       st.session_state[f"show_print_{doc_type}"] = False
 
@@ -431,7 +480,6 @@ elif menu in ["Create Quotation", "Create Invoice"]:
               f"Generated {doc_type} for Client: {client_name}",
           )
 
-          # Save details into session state to show on the clean invoice view screen
           st.session_state[f"last_doc_{doc_type}"] = {
               "client_name": client_name,
               "mobile_number": mobile_number,
@@ -490,14 +538,21 @@ elif menu in ["Create Quotation", "Create Invoice"]:
           unsafe_allow_html=True,
       )
 
-      col_p1, col_p2 = st.columns(2)
+      # --- WORKING HTML PRINT COMPONENT BUTTON ---
+      print_component_code = """
+      <div style="text-align: center; margin: 20px 0;">
+          <button onclick="parent.window.print();" style="background-color: #2e7d32; color: white; padding: 14px 28px; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: bold; box-shadow: 0px 4px 6px rgba(0,0,0,0.1);">
+              🖨️ Click Here to Print Document
+          </button>
+      </div>
+      """
+
+      col_p1, col_p2 = st.columns([2, 1])
       with col_p1:
-        if st.button("🖨️ Print This Document", key=f"print_btn_{doc_type}"):
-          st.markdown(
-              "<script>window.print();</script>", unsafe_allow_html=True
-          )
+        components.html(print_component_code, height=80)
       with col_p2:
-        if st.button("Create Another Document", key=f"reset_{doc_type}"):
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("➕ Create Another Document", key=f"reset_{doc_type}"):
           st.session_state[f"show_print_{doc_type}"] = False
           st.rerun()
 
