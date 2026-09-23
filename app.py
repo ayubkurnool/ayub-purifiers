@@ -56,6 +56,7 @@ def init_db():
 
 init_db()
 
+
 # --- HELPER FUNCTIONS ---
 def log_activity(username, action):
   conn = sqlite3.connect(DB_NAME)
@@ -89,9 +90,7 @@ if "logged_in" not in st.session_state:
 # --- LOGIN SCREEN ---
 if not st.session_state.logged_in:
   st.title("💧 Ayub Purifiers - Login Portal")
-  st.markdown(
-      "Water Purifier Sales & Service Management System[cite: 1]"
-  )
+  st.markdown("Water Purifier Sales & Service Management System")
 
   with st.form("login_form"):
     username_input = st.text_input("Username")
@@ -134,10 +133,10 @@ if st.sidebar.button("Logout"):
   st.session_state.logged_in = False
   st.rerun()
 
-# --- 1. DASHBOARD MODULE ---
+# --- 1. DASHBOARD MODULE (Updated: Excludes Quotations) ---
 if menu == "Dashboard":
   st.title("📊 Business Dashboard")
-  st.markdown("At-a-glance business insights for Ayub Purifiers[cite: 1].")
+  st.markdown("At-a-glance business insights (Invoices & Inventory focus).")
 
   conn = sqlite3.connect(DB_NAME)
   inv_df = pd.read_sql("SELECT * FROM inventory", conn)
@@ -147,6 +146,13 @@ if menu == "Dashboard":
   )
   conn.close()
 
+  # Filter transactions to look only at Invoices (ignoring quotations on dashboard)
+  invoices_df = (
+      trans_df[trans_df["type"] == "Invoice"]
+      if not trans_df.empty
+      else pd.DataFrame()
+  )
+
   col1, col2, col3, col4 = st.columns(4)
   with col1:
     st.metric(
@@ -155,18 +161,14 @@ if menu == "Dashboard":
     )
   with col2:
     total_sales = (
-        trans_df[trans_df["type"] == "Invoice"]["total_amount"].sum()
-        if not trans_df.empty
-        else 0
+        invoices_df["total_amount"].sum() if not invoices_df.empty else 0
     )
     st.metric("Total Invoiced Sales", f"Rs. {total_sales:,.2f}")
   with col3:
-    total_quotes = (
-        len(trans_df[trans_df["type"] == "Quotation"])
-        if not trans_df.empty
-        else 0
+    total_invoices_count = (
+        len(invoices_df) if not invoices_df.empty else 0
     )
-    st.metric("Quotations Generated", total_quotes)
+    st.metric("Total Invoices Issued", total_invoices_count)
   with col4:
     low_stock = (
         len(inv_df[inv_df["quantity"] < 5]) if not inv_df.empty else 0
@@ -198,10 +200,10 @@ if menu == "Dashboard":
     else:
       st.info("No recent activity recorded.")
 
-# --- 2. STOCK RECEIVING MODULE (Staff & Admin) ---
+# --- 2. STOCK RECEIVING MODULE ---
 elif menu == "Stock Receiving":
   st.title("📦 Record Incoming Stock")
-  st.markdown("Log incoming stock components into inventory[cite: 1].")
+  st.markdown("Log incoming stock components into inventory.")
 
   with st.form("stock_form"):
     part_number = st.text_input("Part Number (Unique Identifier)")
@@ -233,16 +235,16 @@ elif menu == "Stock Receiving":
       else:
         st.warning("Please fill in all mandatory fields.")
 
-# --- 3. PRICE MANAGEMENT MODULE (Admin Only) ---
+# --- 3. PRICE MANAGEMENT MODULE ---
 elif menu == "Price Management":
   st.title("💲 Inventory Price Management")
   if not st.session_state.is_admin:
     st.error(
         "Access Denied. Price Management is restricted to the Administrator"
-        " (Owner)[cite: 1]."
+        " (Owner)."
     )
   else:
-    st.markdown("Select items and update unit pricing[cite: 1].")
+    st.markdown("Select items and update unit pricing.")
     conn = sqlite3.connect(DB_NAME)
     inv_df = pd.read_sql("SELECT * FROM inventory", conn)
     conn.close()
@@ -277,20 +279,16 @@ elif menu == "Price Management":
             st.session_state.username,
             f"Updated price for {selected_part} to {new_price}",
         )
-        st.success(
-            f"Price updated successfully for {selected_part}[cite: 1]!"
-        )
+        st.success(f"Price updated successfully for {selected_part}!")
         st.rerun()
     else:
       st.info("No items available in inventory to update pricing.")
 
-# --- 4 & 5. CREATE QUOTATION & INVOICE MODULES ---
+# --- 4 & 5. CREATE QUOTATION & INVOICE MODULES (With Print Button) ---
 elif menu in ["Create Quotation", "Create Invoice"]:
   doc_type = "Quotation" if menu == "Create Quotation" else "Invoice"
   st.title(f"📝 Create {doc_type}")
-  st.markdown(
-      f"Generate a professional itemized {doc_type.lower()} layout[cite: 1]."
-  )
+  st.markdown(f"Generate a professional itemized {doc_type.lower()} layout.")
 
   conn = sqlite3.connect(DB_NAME)
   inv_df = pd.read_sql("SELECT * FROM inventory", conn)
@@ -309,7 +307,6 @@ elif menu in ["Create Quotation", "Create Invoice"]:
     selected_items = []
     subtotal = 0.0
 
-    # Multi-item selector setup
     for index, row in inv_df.iterrows():
       col1, col2, col3 = st.columns([3, 2, 2])
       with col1:
@@ -341,7 +338,6 @@ elif menu in ["Create Quotation", "Create Invoice"]:
 
     st.markdown(f"### Subtotal: Rs. {subtotal:,.2f}")
 
-    # Discount handling (Admin only override)
     discount_type = "None"
     discount_value = 0.0
     if st.session_state.is_admin:
@@ -366,7 +362,7 @@ elif menu in ["Create Quotation", "Create Invoice"]:
       discount_amount = 0.0
       st.info(
           "Note: Only the Administrator (Owner) can apply discounts to"
-          " quotations/invoices[cite: 1]."
+          " quotations/invoices."
       )
 
     final_total = max(0.0, subtotal - discount_amount)
@@ -402,9 +398,9 @@ elif menu in ["Create Quotation", "Create Invoice"]:
         )
         st.success(f"Professional {doc_type} generated successfully!")
 
-        # Professional Layout Output preview
+        # Professional Layout Output with Direct Print Button
         st.markdown("---")
-        st.markdown(f"### 🖨️ AYUB PURIFIERS - OFFICIAL {doc_type.upper()}[cite: 1]")
+        st.markdown(f"### 🖨️ AYUB PURIFIERS - OFFICIAL {doc_type.upper()}")
         st.write(f"**Date:** {datetime.now().strftime('%Y-%m-%d')}")
         st.write(
             f"**Client Name:** {client_name} | **Mobile:** {mobile_number}"
@@ -414,7 +410,16 @@ elif menu in ["Create Quotation", "Create Invoice"]:
         if discount_amount > 0:
           st.write(f"**Discount Applied:** -Rs. {discount_amount:,.2f}")
         st.write(f"**Total Amount Payable:** Rs. {final_total:,.2f}")
-        st.info("You can use your browser print option (Ctrl+P) to print this layout[cite: 1].")
+
+        # Built-in direct browser print trigger button
+        st.markdown(
+            """
+                <button onclick="window.print();" style="background-color: #2e7d32; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; font-weight: bold; margin-top: 10px;">
+                    🖨️ Print this Document Now
+                </button>
+                """,
+            unsafe_allow_html=True,
+        )
       else:
         st.warning(
             "Please enter client name, mobile number, and select at least one"
@@ -424,7 +429,7 @@ elif menu in ["Create Quotation", "Create Invoice"]:
 # --- 6. REPORTING MODULE ---
 elif menu == "Reports":
   st.title("📈 Reporting Module")
-  st.markdown("Filter, view, and inspect system records and transactions[cite: 1].")
+  st.markdown("Filter, view, and inspect system records and transactions.")
 
   conn = sqlite3.connect(DB_NAME)
   inv_df = pd.read_sql("SELECT * FROM inventory", conn)
@@ -438,9 +443,9 @@ elif menu == "Reports":
   with report_tab1:
     st.subheader("Inventory Stock Filter View")
     if not inv_df.empty:
-      search_term = st.text_input("Filter by Part Name/Description[cite: 1]")
+      search_term = st.text_input("Filter by Part Name/Description")
       price_sort = st.selectbox(
-          "Sort by Unit Price[cite: 1]", ["None", "Low to High", "High to Low"]
+          "Sort by Unit Price", ["None", "Low to High", "High to Low"]
       )
 
       filtered_inv = inv_df.copy()
@@ -457,7 +462,6 @@ elif menu == "Reports":
         )
 
       st.dataframe(filtered_inv, use_container_width=True)
-      st.info("Tip: Use browser print tool to print this report table[cite: 1].")
     else:
       st.info("No inventory records found.")
 
