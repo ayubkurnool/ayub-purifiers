@@ -313,7 +313,6 @@ elif menu == "Price Management":
 elif menu in ["Create Quotation", "Create Invoice"]:
   doc_type = "Quotation" if menu == "Create Quotation" else "Invoice"
   st.title(f"📝 Create {doc_type}")
-  st.markdown(f"Generate a professional itemized {doc_type.lower()} layout.")
 
   conn = sqlite3.connect(DB_NAME)
   inv_df = pd.read_sql("SELECT * FROM inventory", conn)
@@ -325,129 +324,182 @@ elif menu in ["Create Quotation", "Create Invoice"]:
         " sales documents."
     )
   else:
-    client_name = st.text_input("Client Name")
-    mobile_number = st.text_input("Mobile Number")
+    # Use session state to toggle between form view and success print view
+    if f"show_print_{doc_type}" not in st.session_state:
+      st.session_state[f"show_print_{doc_type}"] = False
 
-    st.subheader("Select Items")
-    selected_items = []
-    subtotal = 0.0
+    if not st.session_state[f"show_print_{doc_type}"]:
+      # --- FORM INPUT VIEW ---
+      client_name = st.text_input("Client Name", key=f"cn_{doc_type}")
+      mobile_number = st.text_input("Mobile Number", key=f"mb_{doc_type}")
 
-    for index, row in inv_df.iterrows():
-      col1, col2, col3 = st.columns([3, 2, 2])
-      with col1:
-        include = st.checkbox(
-            f"{row['part_description']} (Avail: {row['quantity']})",
-            key=f"chk_{row['id']}",
+      st.subheader("Select Items")
+      selected_items = []
+      subtotal = 0.0
+
+      for index, row in inv_df.iterrows():
+        col1, col2, col3 = st.columns([3, 2, 2])
+        with col1:
+          include = st.checkbox(
+              f"{row['part_description']} (Avail: {row['quantity']})",
+              key=f"chk_{doc_type}_{row['id']}",
+          )
+        with col2:
+          st.text(f"Price: Rs. {row['unit_price']}")
+        with col3:
+          qty = st.number_input(
+              "Qty",
+              min_value=1,
+              max_value=max(1, int(row["quantity"])),
+              value=1,
+              key=f"qty_{doc_type}_{row['id']}",
+          )
+
+        if include:
+          item_total = row["unit_price"] * qty
+          selected_items.append({
+              "part_number": row["part_number"],
+              "description": row["part_description"],
+              "unit_price": row["unit_price"],
+              "quantity": qty,
+              "total": item_total,
+          })
+          subtotal += item_total
+
+      st.markdown(f"### Subtotal: Rs. {subtotal:,.2f}")
+
+      discount_type = "None"
+      discount_value = 0.0
+      if st.session_state.is_admin:
+        st.markdown("---")
+        st.subheader("Admin Discount Controls")
+        discount_type = st.selectbox(
+            "Discount Type",
+            ["None", "Percentage (%)", "Fixed Amount (Rs.)"],
+            key=f"dt_{doc_type}",
         )
-      with col2:
-        st.text(f"Price: Rs. {row['unit_price']}")
-      with col3:
-        qty = st.number_input(
-            "Qty",
-            min_value=1,
-            max_value=max(1, int(row["quantity"])),
-            value=1,
-            key=f"qty_{row['id']}",
-        )
-
-      if include:
-        item_total = row["unit_price"] * qty
-        selected_items.append({
-            "part_number": row["part_number"],
-            "description": row["part_description"],
-            "unit_price": row["unit_price"],
-            "quantity": qty,
-            "total": item_total,
-        })
-        subtotal += item_total
-
-    st.markdown(f"### Subtotal: Rs. {subtotal:,.2f}")
-
-    discount_type = "None"
-    discount_value = 0.0
-    if st.session_state.is_admin:
-      st.markdown("---")
-      st.subheader("Admin Discount Controls")
-      discount_type = st.selectbox(
-          "Discount Type", ["None", "Percentage (%)", "Fixed Amount (Rs.)"]
-      )
-      if discount_type == "Percentage (%)":
-        discount_value = st.number_input(
-            "Percentage Off (%)", min_value=0.0, max_value=100.0, value=0.0
-        )
-        discount_amount = subtotal * (discount_value / 100.0)
-      elif discount_type == "Fixed Amount (Rs.)":
-        discount_value = st.number_input(
-            "Fixed Amount Off (Rs.)", min_value=0.0, max_value=subtotal, value=0.0
-        )
-        discount_amount = discount_value
+        if discount_type == "Percentage (%)":
+          discount_value = st.number_input(
+              "Percentage Off (%)",
+              min_value=0.0,
+              max_value=100.0,
+              value=0.0,
+              key=f"dv_p_{doc_type}",
+          )
+          discount_amount = subtotal * (discount_value / 100.0)
+        elif discount_type == "Fixed Amount (Rs.)":
+          discount_value = st.number_input(
+              "Fixed Amount Off (Rs.)",
+              min_value=0.0,
+              max_value=subtotal,
+              value=0.0,
+              key=f"dv_f_{doc_type}",
+          )
+          discount_amount = discount_value
+        else:
+          discount_amount = 0.0
       else:
         discount_amount = 0.0
+
+      final_total = max(0.0, subtotal - discount_amount)
+      st.markdown(f"## Final Total: Rs. {final_total:,.2f}")
+
+      if st.button(f"Generate & Save {doc_type}", key=f"btn_{doc_type}"):
+        if client_name and mobile_number and selected_items:
+          conn = sqlite3.connect(DB_NAME)
+          cursor = conn.cursor()
+          cursor.execute(
+              """INSERT INTO transactions (type, client_name, mobile_number, items_json, subtotal, discount_type, discount_value, total_amount, created_by, date)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+              (
+                  doc_type,
+                  client_name,
+                  mobile_number,
+                  json.dumps(selected_items),
+                  subtotal,
+                  discount_type,
+                  discount_value,
+                  final_total,
+                  st.session_state.username,
+                  datetime.now().strftime("%Y-%m-%d"),
+              ),
+          )
+          conn.commit()
+          conn.close()
+          log_activity(
+              st.session_state.username,
+              f"Generated {doc_type} for Client: {client_name}",
+          )
+
+          # Save details into session state to show on the clean invoice view screen
+          st.session_state[f"last_doc_{doc_type}"] = {
+              "client_name": client_name,
+              "mobile_number": mobile_number,
+              "items": selected_items,
+              "subtotal": subtotal,
+              "discount_amount": discount_amount,
+              "final_total": final_total,
+              "date": datetime.now().strftime("%Y-%m-%d"),
+          }
+          st.session_state[f"show_print_{doc_type}"] = True
+          st.rerun()
+        else:
+          st.warning(
+              "Please enter client name, mobile number, and select at least one"
+              " item."
+          )
     else:
-      discount_amount = 0.0
-      st.info(
-          "Note: Only the Administrator (Owner) can apply discounts to"
-          " documents."
+      # --- CLEAN DEDICATED PRINTABLE VIEW ---
+      doc_data = st.session_state[f"last_doc_{doc_type}"]
+
+      st.success(f"Professional {doc_type} generated and saved successfully!")
+
+      # Clean printable card container
+      st.markdown(
+          f"""
+            <div style="background-color: white; color: black; padding: 30px; border: 1px solid #ddd; border-radius: 8px;" id="clean-bill">
+                <h2 style="color: #0d47a1; margin-bottom: 0px;">AYUB PURIFIERS</h2>
+                <p style="color: gray; margin-top: 0px;">Water Purifiers Sales & Service Management</p>
+                <hr style="border: 1px solid #0d47a1;">
+                <h3>OFFICIAL {doc_type.upper()}</h3>
+                <p><b>Date:</b> {doc_data['date']}</p>
+                <p><b>Client Name:</b> {doc_data['client_name']} &nbsp;&nbsp;|&nbsp;&nbsp; <b>Mobile:</b> {doc_data['mobile_number']}</p>
+                <br>
+            """,
+          unsafe_allow_html=True,
       )
 
-    final_total = max(0.0, subtotal - discount_amount)
-    st.markdown(f"## Final Total: Rs. {final_total:,.2f}")
+      st.dataframe(
+          pd.DataFrame(doc_data["items"])[
+              ["description", "unit_price", "quantity", "total"]
+          ],
+          use_container_width=True,
+      )
 
-    if st.button(f"Generate & Save {doc_type}"):
-      if client_name and mobile_number and selected_items:
-        conn = sqlite3.connect(DB_NAME)
-        cursor = conn.cursor()
-        cursor.execute(
-            """INSERT INTO transactions (type, client_name, mobile_number, items_json, subtotal, discount_type, discount_value, total_amount, created_by, date)
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                doc_type,
-                client_name,
-                mobile_number,
-                json.dumps(selected_items),
-                subtotal,
-                discount_type,
-                discount_value,
-                final_total,
-                st.session_state.username,
-                datetime.now().strftime("%Y-%m-%d"),
-            ),
-        )
-        conn.commit()
-        conn.close()
-        log_activity(
-            st.session_state.username,
-            f"Generated {doc_type} for Client: {client_name}",
-        )
-        st.success(f"Professional {doc_type} generated successfully!")
+      st.markdown(
+          f"""
+                <div style="text-align: right; margin-top: 20px;">
+                    <p><b>Subtotal:</b> Rs. {doc_data['subtotal']:,.2f}</p>
+                    {f"<p><b>Discount:</b> -Rs. {doc_data['discount_amount']:,.2f}</p>" if doc_data['discount_amount'] > 0 else ""}
+                    <h3><b>Total Amount: Rs. {doc_data['final_total']:,.2f}</b></h3>
+                </div>
+                <hr style="border: 0.5px solid #ccc;">
+                <p style="text-align: center; color: gray; font-size: 12px;">Thank you for your business with Ayub Purifiers!</p>
+            </div>
+            """,
+          unsafe_allow_html=True,
+      )
 
-        # Document View Card
-        st.markdown("---")
-        st.markdown(f"### 🖨️ AYUB PURIFIERS - OFFICIAL {doc_type.upper()}")
-        st.write(f"**Date:** {datetime.now().strftime('%Y-%m-%d')}")
-        st.write(
-            f"**Client Name:** {client_name} | **Mobile:** {mobile_number}"
-        )
-        st.dataframe(pd.DataFrame(selected_items), use_container_width=True)
-        st.write(f"**Subtotal:** Rs. {subtotal:,.2f}")
-        if discount_amount > 0:
-          st.write(f"**Discount Applied:** -Rs. {discount_amount:,.2f}")
-        st.write(f"**Total Amount Payable:** Rs. {final_total:,.2f}")
-
-        # Clean Direct Print Button
-        st.markdown(
-            """
-                <button onclick="window.print();" style="background-color: #2e7d32; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; font-weight: bold; margin-top: 15px;">
-                    🖨️ Print Clean Document Now
-                </button>
-                """,
-            unsafe_allow_html=True,
-        )
-      else:
-        st.warning(
-            "Please enter client name, mobile number, and select at least one"
-            " item."
-        )
+      col_p1, col_p2 = st.columns(2)
+      with col_p1:
+        if st.button("🖨️ Print This Document", key=f"print_btn_{doc_type}"):
+          st.markdown(
+              "<script>window.print();</script>", unsafe_allow_html=True
+          )
+      with col_p2:
+        if st.button("Create Another Document", key=f"reset_{doc_type}"):
+          st.session_state[f"show_print_{doc_type}"] = False
+          st.rerun()
 
 # --- 6. REPORTING MODULE ---
 elif menu == "Reports":
