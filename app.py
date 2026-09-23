@@ -89,7 +89,7 @@ if "logged_in" not in st.session_state:
 
 # --- LOGIN SCREEN ---
 if not st.session_state.logged_in:
-  st.title("💧 Ayub Purifiers - Login Portal")
+  st.title("💧 Value Delivers - Login Portal")
   st.markdown("Water Purifier Sales & Service Management System")
 
   with st.form("login_form"):
